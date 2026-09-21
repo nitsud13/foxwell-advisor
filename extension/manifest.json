@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Foxwell Advisor",
+  "version": "0.2.0",
+  "description": "Community-backed advice while you edit Meta Ads Manager. Local only.",
+  "permissions": [],
+  "host_permissions": ["http://localhost:8877/*", "http://127.0.0.1:8877/*"],
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost:8877/mock/*",
+        "https://adsmanager.facebook.com/*",
+        "https://business.facebook.com/adsmanager/*"
+      ],
+      "js": ["content.js"],
+      "css": ["panel.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}

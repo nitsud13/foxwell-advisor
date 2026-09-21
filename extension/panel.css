@@ -1,0 +1,34 @@
+#fx-advisor {
+  position: fixed; top: 16px; right: 16px; width: 320px; z-index: 2147483647;
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #1c1e21; background: #fff; border: 1px solid #dadde1; border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.14); overflow: hidden;
+  max-height: 60vh; display: flex; flex-direction: column;
+  transition: border-color .15s ease;
+}
+#fx-advisor.idle   { border-left: 6px solid #bcc0c4; }
+#fx-advisor.none,
+#fx-advisor.low    { border-left: 6px solid #31a24c; }
+#fx-advisor.medium { border-left: 6px solid #f7b928; }
+#fx-advisor.high,
+#fx-advisor.severe { border-left: 6px solid #e41e3f; }
+#fx-advisor header { display:flex; align-items:center; justify-content:space-between; padding: 10px 12px; background:#f0f2f5; font-weight:600; cursor: move; user-select: none; }
+#fx-advisor header .right { display:flex; align-items:center; gap:8px; }
+#fx-advisor #fx-collapse { border:0; background:#dfe2e6; color:#1c1e21; width:20px; height:20px; border-radius:4px; cursor:pointer; font-weight:700; line-height:1; }
+#fx-advisor.collapsed { width: auto; }
+#fx-advisor.collapsed .body { display:none; }
+#fx-advisor.collapsed header { padding: 6px 10px; }
+#fx-advisor header small { font-weight: 400; color:#606770; }
+#fx-advisor .body { padding: 12px; overflow-y: auto; }
+#fx-advisor .topic { font-weight: 600; margin-bottom: 4px; }
+#fx-advisor .meter { display:flex; height: 8px; border-radius: 4px; overflow:hidden; background:#e4e6eb; margin: 8px 0; }
+#fx-advisor .meter span { display:block; height:100%; }
+#fx-advisor .meter .s { background:#31a24c; } #fx-advisor .meter .c { background:#e41e3f; } #fx-advisor .meter .d { background:#f7b928; }
+#fx-advisor .legend { display:flex; gap:10px; color:#606770; font-size: 12px; }
+#fx-advisor .summary { margin: 8px 0; }
+#fx-advisor .factor { margin: 4px 0 8px; padding: 6px 8px; background:#f0f2f5; border-radius:6px; }
+#fx-advisor .src { border-top: 1px solid #eee; padding: 6px 0; font-size: 12px; }
+#fx-advisor .src a { color:#1877f2; text-decoration:none; font-weight:600; }
+#fx-advisor .src .ex { color:#606770; }
+#fx-advisor .stats { color:#606770; font-size: 11px; margin-top: 8px; }
+#fx-advisor .muted { color:#8a8d91; }

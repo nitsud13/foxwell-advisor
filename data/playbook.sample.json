@@ -1,0 +1,71 @@
+{
+  "budget_increase_large": {
+    "id": "budget_increase_large",
+    "label": "Large budget increase",
+    "statement": "Raising the budget by more than 20 percent in one step is fine",
+    "n_relevant": 14,
+    "counts": {"supports": 2, "cautions": 9, "depends": 3},
+    "share": {"supports": 0.143, "cautions": 0.643, "depends": 0.214},
+    "lead": "cautions",
+    "lead_confidence": 0.84,
+    "verdict": "cautions",
+    "summary": "14 relevant community sources. 2 support, 9 caution, 3 say it depends. Most recommend steps of 20 percent per day to avoid a learning reset.",
+    "sources": [
+      {"source": "SOP Database — Scaling Playbook", "source_type": "gdrive", "author": "Sample", "date": "2026-03-10", "link": "https://example.com/sop", "stance": "cautions", "excerpt": "Sample entry. Replace by running the playbook builder against the real Foxwell MCP."},
+      {"source": "#scaling", "source_type": "slack", "author": "Sample", "date": "2026-06-02", "link": "https://example.com/thread", "stance": "depends", "excerpt": "Sample entry. Above 1k per day the reset matters less."}
+    ],
+    "built_at": "sample",
+    "jev_mode": "sample"
+  },
+  "budget_increase_small": {
+    "id": "budget_increase_small",
+    "label": "Small budget increase",
+    "statement": "Raising the budget in steps of 20 percent or less is the right approach",
+    "n_relevant": 11,
+    "counts": {"supports": 9, "cautions": 0, "depends": 2},
+    "share": {"supports": 0.818, "cautions": 0.0, "depends": 0.182},
+    "lead": "supports",
+    "lead_confidence": 0.88,
+    "verdict": "supports",
+    "summary": "11 relevant community sources. 9 support, 0 caution, 2 say it depends.",
+    "sources": [
+      {"source": "#scaling", "source_type": "slack", "author": "Sample", "date": "2026-05-14", "link": "https://example.com/thread", "stance": "supports", "excerpt": "Sample entry."}
+    ],
+    "built_at": "sample",
+    "jev_mode": "sample"
+  },
+  "bid_cost_cap": {
+    "id": "bid_cost_cap",
+    "label": "Switch to cost cap",
+    "statement": "Cost cap bidding is a good choice for this account",
+    "n_relevant": 20,
+    "counts": {"supports": 9, "cautions": 5, "depends": 6},
+    "share": {"supports": 0.45, "cautions": 0.25, "depends": 0.3},
+    "lead": "supports",
+    "lead_confidence": 0.62,
+    "verdict": "mixed",
+    "summary": "20 relevant community sources. 9 support, 5 caution, 6 say it depends. The deciding factor in most threads is spend above 1k per day and a stable pixel.",
+    "sources": [
+      {"source": "Podcast Transcript — Sample episode", "source_type": "podcast", "author": "", "date": "2026-04-01", "link": "https://example.com/pod", "stance": "depends", "excerpt": "Sample entry."}
+    ],
+    "built_at": "sample",
+    "jev_mode": "sample"
+  },
+  "pause_in_learning": {
+    "id": "pause_in_learning",
+    "label": "Pause during learning",
+    "statement": "You should wait until learning finishes before pausing",
+    "n_relevant": 11,
+    "counts": {"supports": 9, "cautions": 1, "depends": 1},
+    "share": {"supports": 0.818, "cautions": 0.091, "depends": 0.091},
+    "lead": "supports",
+    "lead_confidence": 0.86,
+    "verdict": "supports",
+    "summary": "11 relevant community sources. 9 of 11 say wait until day 7 before judging.",
+    "sources": [
+      {"source": "#main-membership-channel", "source_type": "slack", "author": "Sample", "date": "2026-02-20", "link": "https://example.com/thread", "stance": "supports", "excerpt": "Sample entry."}
+    ],
+    "built_at": "sample",
+    "jev_mode": "sample"
+  }
+}

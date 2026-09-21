@@ -1,0 +1,8 @@
+.env
+venv/
+.venv/
+__pycache__/
+*.pyc
+data/playbook.json
+data/raw/
+.pytest_cache/

@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ads Manager (mock)</title>
+<style>
+  body { margin:0; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background:#f0f2f5; color:#1c1e21; }
+  .top { background:#fff; border-bottom:1px solid #dadde1; padding: 12px 24px; display:flex; gap:24px; align-items:center; }
+  .top b { font-size:16px; }
+  .wrap { max-width: 760px; margin: 24px auto; padding: 0 24px; }
+  .card { background:#fff; border:1px solid #dadde1; border-radius:8px; padding: 20px 24px; margin-bottom:16px; }
+  h2 { font-size:15px; margin:0 0 12px; }
+  label { display:block; font-weight:600; margin: 14px 0 4px; }
+  input[type=number], input[type=text], select { width: 100%; max-width: 320px; padding: 8px 10px; border:1px solid #ccd0d5; border-radius:6px; font-size:14px; }
+  .row { display:flex; gap:24px; }
+  .row > div { flex:1; }
+  .hint { color:#606770; font-size:12px; }
+  .toggle { display:flex; align-items:center; gap:8px; }
+  .publish { background:#1877f2; color:#fff; border:0; border-radius:6px; padding: 10px 18px; font-weight:600; cursor:pointer; }
+  .menubtn { display:inline-block; padding: 8px 12px; border:1px solid #ccd0d5; border-radius:6px; cursor:pointer; background:#fff; }
+  .menu { position:absolute; background:#fff; border:1px solid #ccd0d5; border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,.12); }
+  .menuitem { padding: 8px 14px; cursor:pointer; } .menuitem:hover { background:#f0f2f5; }
+  .learning { display:inline-block; padding:2px 8px; border-radius:10px; background:#fff3cd; color:#7a5b00; font-size:12px; }
+</style>
+</head>
+<body>
+<div class="top"><b>Ads Manager</b> <span>Campaigns</span> <span>Ad sets</span> <span>Ads</span></div>
+<div class="wrap">
+  <div class="card">
+    <h2>Campaign: <input type="text" data-fx-ctx="name" value="Prospecting | Broad | US" style="max-width:280px"> <span class="learning">Learning</span></h2>
+    <div class="row">
+      <div>
+        <label>Objective</label>
+        <select data-fx-ctx="objective"><option>Sales</option><option>Leads</option><option>Traffic</option></select>
+      </div>
+      <div>
+        <label>Days since launch</label>
+        <input type="number" data-fx-ctx="days_since_launch" value="3">
+      </div>
+      <div>
+        <label>In learning phase</label>
+        <select data-fx-ctx="in_learning"><option value="true">Yes</option><option value="false">No</option></select>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Budget &amp; schedule</h2>
+    <label>Daily budget (USD)</label>
+    <input type="number" data-fx-field="daily_budget" value="200" step="10">
+    <div class="hint">Try 240 (small step) then 600 (large step).</div>
+  </div>
+
+  <div class="card">
+    <h2>Bidding</h2>
+    <label>Bid strategy</label>
+    <select data-fx-field="bid_strategy">
+      <option value="lowest cost">Highest volume (lowest cost)</option>
+      <option value="cost cap">Cost per result goal (cost cap)</option>
+      <option value="bid cap">Bid cap</option>
+      <option value="roas goal">ROAS goal</option>
+    </select>
+  </div>
+
+  <div class="card">
+    <h2>Campaign bid strategy (menu button)</h2>
+    <div class="hint">Mimics the real Ads Manager dropdown: a role=button menu whose node is replaced after a pick.</div>
+    <label>How we'll bid in ad auctions.</label>
+    <div id="bid-menu-wrap">
+      <div role="button" aria-haspopup="menu" tabindex="0" data-fx-field="bid_menu" class="menubtn">Cost per result goal ▾</div>
+    </div>
+    <div id="bid-menu" class="menu" hidden>
+      <div class="menuitem" role="menuitem" data-v="Highest volume or value">Highest volume or value</div>
+      <div class="menuitem" role="menuitem" data-v="Cost per result goal">Cost per result goal</div>
+      <div class="menuitem" role="menuitem" data-v="ROAS goal" data-dialog="1">ROAS goal</div>
+      <div class="menuitem" role="menuitem" data-v="Bid cap">Bid cap</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Audience</h2>
+    <label>Targeting</label>
+    <select data-fx-field="audience">
+      <option value="interests">Interest stack</option>
+      <option value="lookalike">Lookalike 1 percent</option>
+      <option value="broad">Broad (Advantage+ audience)</option>
+    </select>
+  </div>
+
+  <div class="card">
+    <h2>Status</h2>
+    <div class="toggle"><input type="checkbox" data-fx-field="status" checked> <span>Campaign is active</span></div>
+    <div class="hint">Untick while in learning to see the red state.</div>
+  </div>
+
+  <button class="publish">Review and publish</button>
+</div>
+
+<script>
+  // Daily budget input that RE-CREATES its node on every keystroke (what Ads Manager's popover does).
+  document.addEventListener("input", (e) => {
+    const old = e.target;
+    if (old.dataset.fxField !== "daily_budget" || old.dataset.noReplace) return;
+    const fresh = old.cloneNode(false);
+    fresh.value = old.value;
+    old.blur(); old.dispatchEvent(new Event("change", { bubbles: true })); // like React: blur + change before swap
+    old.replaceWith(fresh);
+    fresh.focus();
+    try { fresh.setSelectionRange(fresh.value.length, fresh.value.length); } catch (_) {}
+  }, true);
+</script>
+<script>
+  // Menu button that REPLACES its node on pick (what React does in Ads Manager).
+  (function () {
+    const wrap = document.getElementById("bid-menu-wrap");
+    const menu = document.getElementById("bid-menu");
+    document.addEventListener("click", (e) => {
+      const btn = e.target.closest('[data-fx-field="bid_menu"]');
+      if (btn) { const r = btn.getBoundingClientRect(); menu.style.left = r.left + "px"; menu.style.top = (r.bottom + window.scrollY) + "px"; menu.hidden = !menu.hidden; return; }
+      const item = e.target.closest(".menuitem");
+      if (item && item.dataset.dialog) {
+        // Like Ads Manager: the pick opens a dialog and the button text does not change yet.
+        menu.hidden = true;
+        const dlg = document.createElement("div"); dlg.setAttribute("role", "dialog");
+        dlg.style.cssText = "position:fixed;left:20%;top:30%;width:480px;background:#fff;border:1px solid #ccd0d5;border-radius:8px;padding:20px;box-shadow:0 8px 30px rgba(0,0,0,.2);z-index:9999";
+        dlg.innerHTML = '<h2 style="margin:0 0 12px">ROAS goal for 1 campaign</h2><label>ROAS goal</label><input type="text" value="0.010" aria-label="Minimum ROAS control"><div style="margin-top:16px"><button id="dlg-cancel">Cancel</button></div>';
+        document.body.appendChild(dlg);
+        dlg.querySelector("#dlg-cancel").addEventListener("click", () => dlg.remove());
+        return;
+      }
+      if (item) {
+        menu.hidden = true;
+        const fresh = document.createElement("div");
+        fresh.setAttribute("role", "button"); fresh.setAttribute("aria-haspopup", "menu"); fresh.tabIndex = 0;
+        fresh.dataset.fxField = "bid_menu"; fresh.className = "menubtn"; fresh.textContent = item.dataset.v + " ▾";
+        wrap.replaceChildren(fresh);
+      } else if (!menu.hidden && !e.target.closest("#bid-menu")) { menu.hidden = true; }
+    });
+  })();
+</script>
+<script>
+  // ?budget=600 fills the daily budget shortly after load (for screenshots and rehearsal).
+  (function () {
+    const v = new URLSearchParams(location.search).get("budget");
+    if (!v) return;
+    setTimeout(() => {
+      const i = document.querySelector('input[data-fx-field="daily_budget"]');
+      i.focus(); i.value = v; i.dispatchEvent(new Event("input", { bubbles: true }));
+    }, 300);
+  })();
+</script>
+<!-- Loads the same content script the extension uses, so the demo works without installing it. -->
+<link rel="stylesheet" href="/extension/panel.css">
+<script src="/extension/content.js"></script>
+</body>
+</html>
