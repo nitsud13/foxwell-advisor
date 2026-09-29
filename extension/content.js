@@ -10,7 +10,7 @@
   if (document.documentElement.dataset.fxAdvisor) return;
   document.documentElement.dataset.fxAdvisor = "1";
 
-  const VERSION = "0.3.4"; // shown in the panel header so a stale extension build is obvious
+  const VERSION = "0.3.5"; // shown in the panel header so a stale extension build is obvious
   const SERVER = "http://localhost:8877";
   const DEBOUNCE_MS = 150;
   let timer = null;
@@ -172,7 +172,10 @@
     if (headers.length < 3 || !nameCol) return null;
     const cells = [...document.querySelectorAll("._4lg0")].map((c) => {
       const r = c.getBoundingClientRect();
-      return { text: clean(c.innerText), y: (r.top + r.bottom) / 2, x1: r.left, x2: r.right, h: r.height };
+      const raw = c.innerText || "";
+      // first line only for names: the hover action bar ("Charts Edit Duplicate ...") renders
+      // inside the name cell on its own lines and must not become part of the label
+      return { text: clean(raw), first: clean(raw.split("\n").map((l) => l.trim()).filter(Boolean)[0] || ""), y: (r.top + r.bottom) / 2, y1: r.top, y2: r.bottom, x1: r.left, x2: r.right, h: r.height };
     }).filter((c) => c.h > 0 && c.text);
     return { headers, nameCol, cells };
   }
@@ -180,10 +183,12 @@
   function rowFromCells(g, y) {
     const metrics = {};
     let name = "";
-    for (const c of g.cells.filter((c) => Math.abs(c.y - y) < 6)) {
+    // A cell is on the row if the row's vertical position falls inside the cell. Cells grow
+    // taller when hovered (action bar) so a centre-distance test would miss them.
+    for (const c of g.cells.filter((c) => c.y1 - 2 <= y && y <= c.y2 + 2)) {
       const h = g.headers.find((h) => c.x1 < h.x2 - 2 && c.x2 > h.x1 + 2);
       if (!h) continue;
-      if (h === g.nameCol) name = c.text.split("\n")[0];
+      if (h === g.nameCol) name = c.first;
       else if (!/off \/ on/i.test(h.name)) metrics[h.name] = c.text;
     }
     if (!name || name === g.nameCol.name || /^results from \d+/i.test(name)) return null; // header and totals rows are cells too
