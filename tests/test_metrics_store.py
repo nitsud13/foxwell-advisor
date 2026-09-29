@@ -28,6 +28,8 @@ def test_store_roundtrip(tmp_path: Path):
     st.add_snapshots("1", "campaigns", "w1", [{"id": "c1", "name": "Prospecting", "metrics": {"Amount spent": "$100", "Purchase ROAS": "2.0"}}])
     st.conn.execute("UPDATE snapshots SET ts = ?", (time.time() - 8 * 86400,)); st.conn.execute("UPDATE events SET ts = ?", (time.time() - 7.5 * 86400,)); st.conn.commit()
     st.add_snapshots("1", "campaigns", "w2", [{"id": "c1", "name": "Prospecting", "metrics": {"Amount spent": "$300", "Purchase ROAS": "1.2"}}])
+    assert st.events_awaiting_outcome(7) == []  # pending events are never judged
+    st.set_status([eid], "published")
     pending = st.events_awaiting_outcome(7)
     assert len(pending) == 1
     before = st.snapshot_near("1", "campaigns", "Prospecting", pending[0]["ts"], after=False)

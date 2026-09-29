@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS events (
   account TEXT, level TEXT, entity_id TEXT, entity_name TEXT,
   field TEXT, old TEXT, new TEXT,
   topic TEXT, risk TEXT, interrupt REAL, verdict TEXT,
-  metrics TEXT
+  metrics TEXT,
+  status TEXT DEFAULT 'pending'
 );
 CREATE TABLE IF NOT EXISTS snapshots (
   id INTEGER PRIMARY KEY,
@@ -52,6 +53,10 @@ class Store:
         self.conn = sqlite3.connect(self.path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
+        # older databases: add the status column if missing
+        cols = {r[1] for r in self.conn.execute("PRAGMA table_info(events)")}
+        if "status" not in cols:
+            self.conn.execute("ALTER TABLE events ADD COLUMN status TEXT DEFAULT 'pending'"); self.conn.commit()
 
     # --- writes ---------------------------------------------------------
     def add_event(self, ev: dict, result: dict) -> int:
@@ -76,6 +81,15 @@ class Store:
         self.conn.commit()
         return len(rows)
 
+    def set_status(self, event_ids: list[int], status: str) -> int:
+        """published | discarded | pending. Only pending events change, so a late click cannot flip a decided one."""
+        if not event_ids:
+            return 0
+        q = ",".join("?" * len(event_ids))
+        cur = self.conn.execute(f"UPDATE events SET status=? WHERE id IN ({q}) AND status='pending'", (status, *event_ids))
+        self.conn.commit()
+        return cur.rowcount
+
     def add_outcome(self, event_id: int, before: dict | None, after: dict | None, judged: dict) -> None:
         self.conn.execute(
             "INSERT OR REPLACE INTO outcomes(event_id,judged_ts,before,after,held,confidence,probabilities,note) VALUES(?,?,?,?,?,?,?,?)",
@@ -85,13 +99,17 @@ class Store:
         self.conn.commit()
 
     # --- reads ----------------------------------------------------------
-    def events_awaiting_outcome(self, min_age_days: float = 7.0) -> list[dict]:
+    def events_awaiting_outcome(self, min_age_days: float = 7.0, statuses: tuple = ("published",)) -> list[dict]:
         cutoff = time.time() - min_age_days * 86400
+        q = ",".join("?" * len(statuses))
         rows = self.conn.execute(
-            "SELECT e.* FROM events e LEFT JOIN outcomes o ON o.event_id = e.id WHERE o.event_id IS NULL AND e.ts <= ? ORDER BY e.ts",
-            (cutoff,),
+            f"SELECT e.* FROM events e LEFT JOIN outcomes o ON o.event_id = e.id WHERE o.event_id IS NULL AND e.ts <= ? AND e.status IN ({q}) ORDER BY e.ts",
+            (cutoff, *statuses),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    def status_counts(self) -> dict:
+        return {r["status"]: r["n"] for r in self.conn.execute("SELECT status, COUNT(*) AS n FROM events GROUP BY status")}
 
     def snapshot_near(self, account: str, level: str, name: str, ts: float, after: bool, min_gap_days: float = 0.0) -> dict | None:
         if after:
@@ -118,7 +136,9 @@ class Store:
         return {r["held"]: r["n"] for r in rows}
 
     def counts(self) -> dict:
-        return {t: self.conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in ("events", "snapshots", "outcomes")}
+        c = {t: self.conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in ("events", "snapshots", "outcomes")}
+        c["events_by_status"] = self.status_counts()
+        return c
 
 
 def _s(x):

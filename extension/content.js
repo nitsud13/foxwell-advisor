@@ -10,7 +10,7 @@
   if (document.documentElement.dataset.fxAdvisor) return;
   document.documentElement.dataset.fxAdvisor = "1";
 
-  const VERSION = "0.3.0"; // shown in the panel header so a stale extension build is obvious
+  const VERSION = "0.3.1"; // shown in the panel header so a stale extension build is obvious
   const SERVER = "http://localhost:8877";
   const DEBOUNCE_MS = 150;
   let timer = null;
@@ -209,6 +209,34 @@
     return { account: info.account, level: info.level, id: info.selected.length === 1 ? info.selected[0] : "", name, date_range: info.date_range, metrics };
   }
 
+  // Publish / discard tracking. Advised changes are "pending" until the buyer clicks
+  // Publish (-> published) or Discard / Cancel (-> discarded). Ads Manager has several
+  // publish surfaces: the editor footer, the inline popover, the "Review and publish"
+  // drawer, and the "Discard drafts" dialog. All are buttons whose visible text says so.
+  const pendingEventIds = new Set();
+  const PUBLISH_RE = /^(publish|publish all|publish \d+ changes?)$/i;
+  const DISCARD_RE = /^(discard|discard drafts?|discard changes?|cancel)$/i;
+  async function setStatus(status) {
+    const ids = [...pendingEventIds];
+    if (!ids.length) return;
+    pendingEventIds.clear();
+    try {
+      await fetch(`${SERVER}/events/status`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ event_ids: ids, status }) });
+      log("status", status, ids);
+    } catch (e) { log("status failed", e.message); }
+  }
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest('button, [role="button"], a');
+    if (!b || b.closest("#fx-advisor")) return;
+    const t = clean(b.innerText || b.getAttribute("aria-label") || "");
+    if (PUBLISH_RE.test(t)) setStatus("published");
+    else if (DISCARD_RE.test(t)) {
+      // "Cancel" only counts inside an edit surface (popover, dialog, editor footer), not in nav.
+      if (/^cancel$/i.test(t) && !b.closest('[role="dialog"], form, [aria-modal="true"]') && !/\/edit\//.test(location.pathname)) return;
+      setStatus("discarded");
+    }
+  }, true);
+
   // Snapshot: post every visible row so outcomes can be judged later. On load, on level
   // change, and every 5 minutes. Only what is on screen leaves the browser.
   let lastSnapshotKey = "";
@@ -360,7 +388,9 @@
     const ev = { field: name, old: oldVal, new: newVal, campaign: campaignContext(), entity: entityContext() };
     try {
       const r = await fetch(`${SERVER}/advise`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ev) });
-      render(await r.json(), ev);
+      const res = await r.json();
+      if (res.event_id) pendingEventIds.add(res.event_id);
+      render(res, ev);
     } catch (e) { renderError(e.message); }
   }
 

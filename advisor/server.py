@@ -85,6 +85,11 @@ class ChangeEvent(BaseModel):
     entity: Entity = Field(default_factory=Entity)
 
 
+class StatusUpdate(BaseModel):
+    event_ids: list[int]
+    status: str = Field(..., pattern="^(published|discarded|pending)$")
+
+
 class SnapshotRow(BaseModel):
     id: str = ""
     name: str
@@ -236,6 +241,13 @@ async def snapshot(snap: Snapshot) -> dict:
     return {"stored": n}
 
 
+@app.post("/events/status")
+async def set_event_status(u: StatusUpdate) -> dict:
+    """The extension calls this when the buyer clicks Publish or Discard, with the ids of the
+    advised changes since the last such click. Discarded changes are never judged."""
+    return {"updated": store.set_status(u.event_ids, u.status), "status": u.status}
+
+
 OUTCOME = {
     "held": "performance after the change is consistent with what the community advice predicted",
     "contradicted": "performance after the change contradicts the community advice",
@@ -249,7 +261,10 @@ async def judge_outcomes(min_age_days: float = 7.0, min_gap_days: float = 6.0) -
     before the change with the first snapshot at least `min_gap_days` after it, and ask Jev
     whether the community advice held. Snapshots come from the buyer's own page views."""
     judged, skipped = [], 0
-    for ev in store.events_awaiting_outcome(min_age_days):
+    # Discarded edits never ran, so there is nothing to judge. Close them out.
+    for ev in store.events_awaiting_outcome(min_age_days, statuses=("discarded",)):
+        store.add_outcome(ev["id"], None, None, {"held": "not_applied", "confidence": 1.0, "probabilities": {}, "note": "discarded before publish"})
+    for ev in store.events_awaiting_outcome(min_age_days, statuses=("published",)):
         before = store.snapshot_near(ev["account"], ev["level"], ev["entity_name"], ev["ts"], after=False)
         after = store.snapshot_near(ev["account"], ev["level"], ev["entity_name"], ev["ts"], after=True, min_gap_days=min_gap_days)
         if not before or not after:
@@ -270,7 +285,8 @@ async def judge_outcomes(min_age_days: float = 7.0, min_gap_days: float = 6.0) -
                "note": f"comparable={r['answers']['note_quality']['noul']:.2f}"}
         store.add_outcome(ev["id"], b, a, out)
         judged.append({"event_id": ev["id"], "entity": ev["entity_name"], "change": state["change"], **out, "deltas": d})
-    return {"judged": judged, "skipped_no_snapshot": skipped, "summary": store.outcome_summary()}
+    pending = len(store.events_awaiting_outcome(min_age_days, statuses=("pending",)))
+    return {"judged": judged, "skipped_no_snapshot": skipped, "still_pending_unknown_publish": pending, "summary": store.outcome_summary()}
 
 
 @app.get("/outcomes")

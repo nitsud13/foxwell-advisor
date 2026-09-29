@@ -78,7 +78,7 @@ Jev sees real performance without any API token. The extension reads what is alr
 
 Those numbers travel with each change event, so a 2x budget on an ad set with 41 purchases and ROAS 3.4 is judged differently from one still in learning with one purchase.
 
-The same rows are posted as a snapshot on page load and every five minutes (`POST /snapshot`). Seven days after an advised change, `POST /outcomes/judge` compares the nearest snapshot before the change with the first one at least six days after, and asks Jev whether the community advice held (held, contradicted, inconclusive) with a confidence. `GET /outcomes` lists recent events and the running tally. Storage is a local SQLite file, `data/advisor.db`, git-ignored. Only metrics visible in the buyer's own account are stored.
+The same rows are posted as a snapshot on page load and every five minutes (`POST /snapshot`). Seven days after an advised change, `POST /outcomes/judge` compares the nearest snapshot before the change with the first one at least six days after, and asks Jev whether the community advice held (held, contradicted, inconclusive) with a confidence. Advised changes start as `pending`. When the buyer clicks Publish (editor footer, inline popover, or the Review and publish drawer) the extension marks the changes since the last such click `published`; Discard or Cancel marks them `discarded`. Only published changes are judged; discarded ones are closed as `not_applied`; changes whose publish state was never seen stay pending and are reported separately. `GET /outcomes` lists recent events and the running tally. Storage is a local SQLite file, `data/advisor.db`, git-ignored. Only metrics visible in the buyer's own account are stored.
 
 ## API
 

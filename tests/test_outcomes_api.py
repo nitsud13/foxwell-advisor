@@ -28,7 +28,8 @@ def test_snapshot_and_judge(monkeypatch, tmp_path: Path):
     c = TestClient(server.app)
     assert c.post("/snapshot", json={"account": "1", "level": "campaigns", "date_range": "w1",
                                      "rows": [{"id": "c1", "name": "P", "metrics": {"Amount spent": "$100", "Purchase ROAS": "2.0"}}]}).json()["stored"] == 1
-    c.post("/advise", json={"field": "Daily budget", "old": "200", "new": "600", "entity": {"account": "1", "level": "campaigns", "id": "c1", "name": "P"}})
+    eid = c.post("/advise", json={"field": "Daily budget", "old": "200", "new": "600", "entity": {"account": "1", "level": "campaigns", "id": "c1", "name": "P"}}).json()["event_id"]
+    c.post("/events/status", json={"event_ids": [eid], "status": "published"})
     st.conn.execute("UPDATE snapshots SET ts = ?", (time.time() - 8 * 86400,)); st.conn.execute("UPDATE events SET ts = ?", (time.time() - 7.5 * 86400,)); st.conn.commit()
     c.post("/snapshot", json={"account": "1", "level": "campaigns", "date_range": "w2",
                               "rows": [{"id": "c1", "name": "P", "metrics": {"Amount spent": "$300", "Purchase ROAS": "1.1"}}]})
