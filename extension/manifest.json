@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Foxwell Advisor",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Community-backed advice while you edit Meta Ads Manager. Local only.",
   "permissions": [],
   "host_permissions": ["http://localhost:8877/*", "http://127.0.0.1:8877/*"],

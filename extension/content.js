@@ -10,7 +10,7 @@
   if (document.documentElement.dataset.fxAdvisor) return;
   document.documentElement.dataset.fxAdvisor = "1";
 
-  const VERSION = "0.3.3"; // shown in the panel header so a stale extension build is obvious
+  const VERSION = "0.3.4"; // shown in the panel header so a stale extension build is obvious
   const SERVER = "http://localhost:8877";
   const DEBOUNCE_MS = 150;
   let timer = null;

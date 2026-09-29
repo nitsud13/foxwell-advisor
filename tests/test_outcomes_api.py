@@ -9,7 +9,7 @@ from advisor.store import Store
 
 def test_advise_logs_event_with_metrics(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(server, "store", Store(tmp_path / "a.db"))
-    monkeypatch.setattr(server.jev, "api_key", "")
+    monkeypatch.setattr(server.jev, "api_key", ""); server._recent.clear()
     c = TestClient(server.app)
     r = c.post("/advise", json={"field": "Daily budget", "old": "$349.00", "new": "$1000",
                                 "entity": {"account": "1", "level": "campaigns", "id": "c1", "name": "Prospecting",
@@ -24,7 +24,7 @@ def test_advise_logs_event_with_metrics(monkeypatch, tmp_path: Path):
 def test_snapshot_and_judge(monkeypatch, tmp_path: Path):
     st = Store(tmp_path / "b.db")
     monkeypatch.setattr(server, "store", st)
-    monkeypatch.setattr(server.jev, "api_key", "")
+    monkeypatch.setattr(server.jev, "api_key", ""); server._recent.clear()
     c = TestClient(server.app)
     assert c.post("/snapshot", json={"account": "1", "level": "campaigns", "date_range": "w1",
                                      "rows": [{"id": "c1", "name": "P", "metrics": {"Amount spent": "$100", "Purchase ROAS": "2.0"}}]}).json()["stored"] == 1

@@ -7,13 +7,18 @@ from advisor import server
 from advisor.store import Store
 
 
+_n = [0]
+
+
 def _advise(c, name="P"):
-    return c.post("/advise", json={"field": "Daily budget", "old": "200", "new": "600",
+    # distinct "new" values so the server's duplicate guard does not collapse them
+    _n[0] += 1
+    return c.post("/advise", json={"field": "Daily budget", "old": "200", "new": str(600 + _n[0]),
                                    "entity": {"account": "1", "level": "campaigns", "id": "c1", "name": name}}).json()["event_id"]
 
 
 def test_status_flow_and_judge_only_published(monkeypatch, tmp_path: Path):
-    st = Store(tmp_path / "s.db"); monkeypatch.setattr(server, "store", st); monkeypatch.setattr(server.jev, "api_key", "")
+    st = Store(tmp_path / "s.db"); monkeypatch.setattr(server, "store", st); monkeypatch.setattr(server.jev, "api_key", ""); server._recent.clear()
     c = TestClient(server.app)
     c.post("/snapshot", json={"account": "1", "level": "campaigns", "date_range": "w1", "rows": [{"name": "P", "metrics": {"Amount spent": "$100"}}]})
     e_pub, e_disc, e_pend = _advise(c), _advise(c), _advise(c)

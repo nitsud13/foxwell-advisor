@@ -195,9 +195,27 @@ async def playbook() -> dict:
     return {k: {kk: vv for kk, vv in v.items() if kk != "chunks"} for k, v in pb.items()}
 
 
+# Server-side guard: the same change on the same entity within a minute is a page
+# re-render or a misbehaving client, not a second decision. Answer from cache, store nothing.
+_recent: dict[str, tuple[float, dict]] = {}
+DUPLICATE_WINDOW_S = 60
+
+
+def _dupe_key(ev: ChangeEvent) -> str:
+    e = ev.entity
+    return f"{e.account}|{e.level}|{e.name or e.id}|{ev.field}|{ev.old}|{ev.new}"
+
+
 @app.post("/advise")
 async def advise(ev: ChangeEvent) -> dict:
     t0 = time.perf_counter()
+    key = _dupe_key(ev)
+    hit = _recent.get(key)
+    if hit and time.time() - hit[0] < DUPLICATE_WINDOW_S:
+        cached = dict(hit[1]); cached["duplicate"] = True; cached["event_id"] = None
+        return cached
+    for k in [k for k, (ts, _) in _recent.items() if time.time() - ts > DUPLICATE_WINDOW_S]:
+        _recent.pop(k, None)
     state = describe(ev)
     r = await jev.ask(state, questions())
     a = r["answers"]
@@ -231,6 +249,7 @@ async def advise(ev: ChangeEvent) -> dict:
     except Exception as e:  # logging must never break advice
         result["event_id"] = None
         result["store_error"] = str(e)
+    _recent[key] = (time.time(), result)
     return result
 
 

@@ -4,7 +4,7 @@ from advisor import server
 
 
 def test_advise_stub_budget_bump(monkeypatch):
-    monkeypatch.setattr(server.jev, "api_key", "")
+    monkeypatch.setattr(server.jev, "api_key", ""); server._recent.clear()
     c = TestClient(server.app)
     r = c.post("/advise", json={"field": "daily_budget", "old": 200, "new": 600,
                                 "campaign": {"name": "Prospecting", "in_learning": True}})
