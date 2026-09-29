@@ -6,3 +6,4 @@ __pycache__/
 data/playbook.json
 data/raw/
 .pytest_cache/
+data/advisor.db

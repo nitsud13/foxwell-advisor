@@ -10,7 +10,7 @@
   if (document.documentElement.dataset.fxAdvisor) return;
   document.documentElement.dataset.fxAdvisor = "1";
 
-  const VERSION = "0.2.0"; // shown in the panel header so a stale extension build is obvious
+  const VERSION = "0.3.0"; // shown in the panel header so a stale extension build is obvious
   const SERVER = "http://localhost:8877";
   const DEBOUNCE_MS = 150;
   let timer = null;
@@ -126,6 +126,107 @@
     return ctx;
   }
 
+  // --- performance readers ---------------------------------------------------
+  // Everything Jev learns about performance comes from what is already on the page.
+  // Table: Ads Manager renders a virtualized grid whose cells are positioned by geometry,
+  // not nested in rows. Match a cell to a row by vertical position and to a column by
+  // overlapping the column header's horizontal span. Verified 2026-09-28.
+  function pageInfo() {
+    const q = new URLSearchParams(location.search);
+    const level = (location.pathname.match(/\/manage\/(campaigns|adsets|ads)/) || [])[1] || "";
+    const sel = q.get("selected_ad_ids") || q.get("selected_adset_ids") || q.get("selected_campaign_ids") || "";
+    return { account: q.get("act") || "", level, selected: sel.split(",").filter(Boolean), date_range: q.get("date") || "" };
+  }
+
+  function readTableRows() {
+    const headers = [...document.querySelectorAll('[role="columnheader"]')].map((h) => {
+      const r = h.getBoundingClientRect(); return { name: clean(h.innerText), x1: r.left, x2: r.right };
+    }).filter((h) => h.name);
+    if (headers.length < 3) return [];
+    const nameCol = headers.find((h) => /^(campaign|ad set|ad)$/i.test(h.name));
+    if (!nameCol) return [];
+    const cells = [...document.querySelectorAll("._4lg0")].map((c) => {
+      const r = c.getBoundingClientRect();
+      return { text: clean(c.innerText), y: (r.top + r.bottom) / 2, x1: r.left, x2: r.right, h: r.height };
+    }).filter((c) => c.h > 0 && c.text);
+    const rows = [];
+    for (const anchorCell of cells.filter((c) => c.x1 < nameCol.x2 - 2 && c.x2 > nameCol.x1 + 2)) {
+      const metrics = {};
+      for (const c of cells.filter((c) => Math.abs(c.y - anchorCell.y) < 6)) {
+        const h = headers.find((h) => c.x1 < h.x2 - 2 && c.x2 > h.x1 + 2);
+        if (h && h !== nameCol && !/off \/ on/i.test(h.name)) metrics[h.name] = c.text;
+      }
+      const name = anchorCell.text.split("\n")[0];
+      if (name && Object.keys(metrics).length) rows.push({ name, metrics });
+    }
+    return rows;
+  }
+
+  // Editor summary card (top right of the campaign/ad set editor): "Amount spent $248.60" etc.
+  const CARD_LABELS = /^(amount spent|cost per result|website purchases?|purchases|results|purchase roas.*|roas|frequency|reach|impressions)$/i;
+  function readEditorCard() {
+    const out = {};
+    const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let x;
+    while ((x = w.nextNode())) {
+      const t = clean(x.textContent).replace(/\s*(\.\.\.|\u2026)$/, "");
+      if (!t || !CARD_LABELS.test(t)) continue;
+      let box = x.parentElement;
+      for (let i = 0; i < 5 && box; i++, box = box.parentElement) {
+        if (box.id === "fx-advisor" || box.closest("#fx-advisor")) break;
+        const leaf = [...box.querySelectorAll("*")].map((e) => (e.childNodes.length === 1 && e.firstChild.nodeType === 3) ? clean(e.textContent) : "")
+          .find((v) => v && v !== t && /^[$\d\u2014\-][\d,.$%x\u2014\-]*$/.test(v));
+        if (leaf) { out[t] = leaf; break; }
+      }
+    }
+    return out;
+  }
+
+  // Name of the entity being edited: the breadcrumb's highlighted item or the editor title.
+  function editorEntityName() {
+    const h = document.querySelector('[role="dialog"] h1, [role="dialog"] h2, h1');
+    const crumb = [...document.querySelectorAll('a, span')].find((e) => e.getAttribute("aria-current") === "page");
+    return clean((crumb && crumb.innerText) || (h && h.innerText) || "").slice(0, 120);
+  }
+
+  function entityContext() {
+    if (IS_MOCK) {
+      const m = {};
+      document.querySelectorAll("[data-fx-metric]").forEach((el) => { m[el.dataset.fxMetric] = clean(el.textContent); });
+      return { account: "mock", level: "campaigns", id: "mock-1", name: campaignContext().name || "", date_range: "last 7 days", metrics: m };
+    }
+    const info = pageInfo();
+    const inEditor = /\/edit\//.test(location.pathname);
+    let metrics = inEditor ? readEditorCard() : {};
+    let name = inEditor ? editorEntityName() : "";
+    if (!Object.keys(metrics).length) {
+      // Table view (inline popover edits): use the selected row, or the single visible row.
+      const rows = readTableRows();
+      const row = rows.find((r) => info.selected.length === 1 && r.name === name) || (rows.length === 1 ? rows[0] : null)
+        || rows.find((r) => r.metrics && /^(learning|active)/i.test(r.metrics["Delivery"] || "") && rows.length === 1) || null;
+      if (row) { metrics = row.metrics; name = name || row.name; }
+    }
+    return { account: info.account, level: info.level, id: info.selected.length === 1 ? info.selected[0] : "", name, date_range: info.date_range, metrics };
+  }
+
+  // Snapshot: post every visible row so outcomes can be judged later. On load, on level
+  // change, and every 5 minutes. Only what is on screen leaves the browser.
+  let lastSnapshotKey = "";
+  async function postSnapshot(force) {
+    if (IS_MOCK) return;
+    const info = pageInfo();
+    const rows = readTableRows();
+    if (!rows.length) return;
+    const key = `${info.account}|${info.level}|${info.date_range}|${rows.map((r) => r.name).join(",")}`;
+    if (!force && key === lastSnapshotKey) return;
+    lastSnapshotKey = key;
+    try {
+      await fetch(`${SERVER}/snapshot`, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account: info.account, level: info.level, date_range: info.date_range, rows }) });
+      log("snapshot", rows.length, "rows", info.level, info.date_range);
+    } catch (e) { log("snapshot failed", e.message); }
+  }
+
   // --- panel -------------------------------------------------------------
   function panel() {
     let p = document.getElementById("fx-advisor");
@@ -216,6 +317,17 @@
     html += `<div>Risk: <b>${res.risk}</b> <span class="muted">(${pct(res.risk_confidence)}%)</span>`;
     if (res.delta_pct !== null && res.delta_pct !== undefined) html += ` · ${res.delta_pct > 0 ? "+" : ""}${res.delta_pct}%`;
     html += `</div>`;
+    const pf = res.performance;
+    if (pf && Object.keys(pf).length) {
+      const parts = [];
+      if (pf.spend !== undefined) parts.push(`spend $${pf.spend.toLocaleString()}`);
+      if (pf.purchases !== undefined) parts.push(`${pf.purchases} purchases`);
+      if (pf.roas !== undefined) parts.push(`ROAS ${pf.roas}`);
+      if (pf.cpa !== undefined) parts.push(`CPA $${pf.cpa}`);
+      if (pf.frequency !== undefined) parts.push(`freq ${pf.frequency}`);
+      if (pf.delivery) parts.push(pf.delivery);
+      html += `<div class="perf">Seen on page: ${parts.join(" · ")}</div>`;
+    }
     if (v) {
       const s = v.share || {};
       html += `<div class="meter"><span class="s" style="width:${pct(s.supports)}%"></span><span class="d" style="width:${pct(s.depends)}%"></span><span class="c" style="width:${pct(s.cautions)}%"></span></div>`;
@@ -245,7 +357,7 @@
 
   // --- wiring --------------------------------------------------------------
   async function advise(name, el, oldVal, newVal) {
-    const ev = { field: name, old: oldVal, new: newVal, campaign: campaignContext() };
+    const ev = { field: name, old: oldVal, new: newVal, campaign: campaignContext(), entity: entityContext() };
     try {
       const r = await fetch(`${SERVER}/advise`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ev) });
       render(await r.json(), ev);
@@ -399,6 +511,10 @@
 
   panel();
   rescan();
+  setTimeout(() => postSnapshot(false), 2500);
+  setInterval(() => postSnapshot(false), 5 * 60 * 1000);
+  let lastHref = location.href;
+  setInterval(() => { if (location.href !== lastHref) { lastHref = location.href; setTimeout(() => postSnapshot(false), 2500); } }, 1000);
   new MutationObserver(scheduleRescan).observe(document.body, { childList: true, subtree: true, characterData: true });
   setInterval(rescan, 1000); // safety net for re-renders the observer coalesced away
 })();

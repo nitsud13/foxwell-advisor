@@ -26,6 +26,7 @@
 #fx-advisor .meter .s { background:#31a24c; } #fx-advisor .meter .c { background:#e41e3f; } #fx-advisor .meter .d { background:#f7b928; }
 #fx-advisor .legend { display:flex; gap:10px; color:#606770; font-size: 12px; }
 #fx-advisor .summary { margin: 8px 0; }
+#fx-advisor .perf { color:#606770; font-size: 12px; margin: 4px 0; }
 #fx-advisor .factor { margin: 4px 0 8px; padding: 6px 8px; background:#f0f2f5; border-radius:6px; }
 #fx-advisor .src { border-top: 1px solid #eee; padding: 6px 0; font-size: 12px; }
 #fx-advisor .src a { color:#1877f2; text-decoration:none; font-weight:600; }

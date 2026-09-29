@@ -26,6 +26,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .jev_client import JevClient, choice, noul, score, score_level
+from .metrics import delta, normalize
+from .store import Store
 from .topics import TOPIC_BY_ID, topic_criteria
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -52,6 +54,7 @@ app.mount("/mock", StaticFiles(directory=ROOT / "mock", html=True), name="mock")
 app.mount("/extension", StaticFiles(directory=ROOT / "extension"), name="extension")
 
 jev = JevClient()
+store = Store()
 
 
 class Campaign(BaseModel):
@@ -64,11 +67,35 @@ class Campaign(BaseModel):
     bid_strategy: str = ""
 
 
+class Entity(BaseModel):
+    """What the extension can read about the thing being edited: ids from the URL, metrics from the page."""
+    account: str = ""
+    level: str = ""          # campaigns | adsets | ads
+    id: str = ""
+    name: str = ""
+    date_range: str = ""
+    metrics: dict = Field(default_factory=dict)  # raw label -> text as shown, e.g. {"Amount spent": "$193.76"}
+
+
 class ChangeEvent(BaseModel):
     field: str = Field(..., description="field key on the mock page, or the visible label text on real Ads Manager")
     old: Any = None
     new: Any = None
     campaign: Campaign = Field(default_factory=Campaign)
+    entity: Entity = Field(default_factory=Entity)
+
+
+class SnapshotRow(BaseModel):
+    id: str = ""
+    name: str
+    metrics: dict = Field(default_factory=dict)
+
+
+class Snapshot(BaseModel):
+    account: str = ""
+    level: str = ""
+    date_range: str = ""
+    rows: list[SnapshotRow]
 
 
 def load_playbook() -> dict:
@@ -106,7 +133,13 @@ def describe(ev: ChangeEvent) -> dict:
     placeholder 0.01 to 2.0 is not a 19900 percent increase.
     """
     campaign = {k: v for k, v in ev.campaign.model_dump().items() if v not in (None, "")}
+    perf = normalize(ev.entity.metrics)
+    if perf.get("in_learning") and "in_learning" not in campaign:
+        campaign["in_learning"] = True
     d = {"field": ev.field, "old": ev.old, "new": ev.new, "campaign": campaign}
+    if perf:
+        d["performance"] = {k: v for k, v in perf.items() if k not in ("active",)}
+        d["performance_window"] = ev.entity.date_range or "as shown in Ads Manager"
     d["delta_pct"] = delta_pct(ev.old, ev.new) if MONEY_FIELD.search(ev.field or "") else None
     d["description"] = f"{ev.field} changed from {ev.old} to {ev.new}"
     if d["delta_pct"] is not None:
@@ -117,15 +150,25 @@ def describe(ev: ChangeEvent) -> dict:
             d["description"] += "; a small increase of 20 percent or less"
         elif d["delta_pct"] < 0:
             d["description"] += "; a decrease, lowering the budget"
-    if ev.campaign.in_learning:
+    if ev.campaign.in_learning or perf.get("in_learning"):
         d["description"] += "; campaign is in learning phase"
+    if perf:
+        bits = []
+        if "spend" in perf: bits.append(f"spend {perf['spend']:.0f}")
+        if "purchases" in perf: bits.append(f"{perf['purchases']:.0f} purchases")
+        if "roas" in perf: bits.append(f"ROAS {perf['roas']:.2f}")
+        if "cpa" in perf: bits.append(f"cost per result {perf['cpa']:.0f}")
+        if "frequency" in perf: bits.append(f"frequency {perf['frequency']:.2f}")
+        if perf.get("delivery"): bits.append(f"delivery {perf['delivery']}")
+        if bits:
+            d["description"] += "; performance " + (ev.entity.date_range or "shown") + ": " + ", ".join(bits)
     return d
 
 
 def questions() -> dict:
     return {
         "topic": choice("Which type of change is this?", topic_criteria()),
-        "risk": score("How risky is this change for delivery and performance?", RISK_LEVELS),
+        "risk": score("How risky is this change for delivery and performance, given the performance numbers if present?", RISK_LEVELS),
         "interrupt": noul(
             "Is this change worth interrupting the media buyer with advice?",
             true="the change is large, unusual, or commonly regretted",
@@ -137,7 +180,7 @@ def questions() -> dict:
 @app.get("/health")
 async def health() -> dict:
     pb = load_playbook()
-    return {"ok": True, "jev_mode": jev.mode, "playbook_topics": len(pb),
+    return {"ok": True, "jev_mode": jev.mode, "playbook_topics": len(pb), "store": store.counts(),
             "playbook_source": "built" if PLAYBOOK.exists() else ("sample" if SAMPLE.exists() else "none")}
 
 
@@ -160,7 +203,7 @@ async def advise(ev: ChangeEvent) -> dict:
     verdict = None
     if entry:
         verdict = {k: v for k, v in entry.items() if k != "chunks"}
-    return {
+    result = {
         "topic": topic_id,
         "topic_label": topic["label"],
         "topic_confidence": a["topic"].get("confidence"),
@@ -176,4 +219,60 @@ async def advise(ev: ChangeEvent) -> dict:
         "jev_latency_ms": r["latency_ms"],
         "total_latency_ms": int((time.perf_counter() - t0) * 1000),
         "usage": r.get("usage"),
+        "performance": state.get("performance"),
     }
+    try:
+        result["event_id"] = store.add_event(ev.model_dump(), result)
+    except Exception as e:  # logging must never break advice
+        result["event_id"] = None
+        result["store_error"] = str(e)
+    return result
+
+
+@app.post("/snapshot")
+async def snapshot(snap: Snapshot) -> dict:
+    """Performance rows as visible on the page. Posted on load and every few minutes."""
+    n = store.add_snapshots(snap.account, snap.level, snap.date_range, [r.model_dump() for r in snap.rows])
+    return {"stored": n}
+
+
+OUTCOME = {
+    "held": "performance after the change is consistent with what the community advice predicted",
+    "contradicted": "performance after the change contradicts the community advice",
+    "inconclusive": "too little data, too small a change, or other factors dominate",
+}
+
+
+@app.post("/outcomes/judge")
+async def judge_outcomes(min_age_days: float = 7.0, min_gap_days: float = 6.0) -> dict:
+    """Judge advised changes that are at least `min_age_days` old: compare the nearest snapshot
+    before the change with the first snapshot at least `min_gap_days` after it, and ask Jev
+    whether the community advice held. Snapshots come from the buyer's own page views."""
+    judged, skipped = [], 0
+    for ev in store.events_awaiting_outcome(min_age_days):
+        before = store.snapshot_near(ev["account"], ev["level"], ev["entity_name"], ev["ts"], after=False)
+        after = store.snapshot_near(ev["account"], ev["level"], ev["entity_name"], ev["ts"], after=True, min_gap_days=min_gap_days)
+        if not before or not after:
+            skipped += 1
+            continue
+        b = normalize(json.loads(before["metrics"])); a = normalize(json.loads(after["metrics"]))
+        d = delta(b, a)
+        state = {"change": f"{ev['field']}: {ev['old']} -> {ev['new']}", "topic": ev["topic"],
+                 "community_verdict": ev["verdict"], "risk_at_time": ev["risk"],
+                 "before_window": before["date_range"], "after_window": after["date_range"], "deltas": d}
+        r = await jev.ask(state, {
+            "held": choice("Did the community advice hold, judging by the before and after performance?", OUTCOME),
+            "note_quality": noul("The before and after windows are comparable enough to judge",
+                                 true="same window length and metric set", false="different windows or missing metrics"),
+        })
+        h = r["answers"]["held"]
+        out = {"held": h["choice"], "confidence": h.get("confidence"), "probabilities": h.get("probabilities"),
+               "note": f"comparable={r['answers']['note_quality']['noul']:.2f}"}
+        store.add_outcome(ev["id"], b, a, out)
+        judged.append({"event_id": ev["id"], "entity": ev["entity_name"], "change": state["change"], **out, "deltas": d})
+    return {"judged": judged, "skipped_no_snapshot": skipped, "summary": store.outcome_summary()}
+
+
+@app.get("/outcomes")
+async def outcomes(limit: int = 50) -> dict:
+    return {"events": store.recent_events(limit), "summary": store.outcome_summary(), "counts": store.counts()}

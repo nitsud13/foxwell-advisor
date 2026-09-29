@@ -69,6 +69,17 @@ If the panel stays quiet on a field: open DevTools, Console, and check for `fx-a
 
 Raw search results are cached in `data/raw/` so re-classifying does not hit the Foxwell rate limit. The Foxwell MCP allows 10 searches per minute per token; the builder paces itself at one search every 6.5 seconds and waits 65 seconds when it is told to. A full 22 topic build takes about 3 minutes. Topics live in `advisor/topics.py`. Each topic has three Foxwell queries (results are merged and deduplicated) plus a statement Jev tests every chunk against (supports, cautions, depends, unrelated). Jev also tags what each caution or depends chunk hinges on (spend level, account maturity, creative, product or offer, seasonality); the most common one becomes the topic's deciding factor and shows in the panel.
 
+## Performance data and the outcome loop
+
+Jev sees real performance without any API token. The extension reads what is already on the page:
+
+- In the editor, the summary card (amount spent, cost per result, purchases).
+- In the table, every visible row: spend, purchases, ROAS, cost per result, frequency, delivery status. Ads Manager renders a virtualized grid, so cells are matched to rows by vertical position and to columns by the header's horizontal span.
+
+Those numbers travel with each change event, so a 2x budget on an ad set with 41 purchases and ROAS 3.4 is judged differently from one still in learning with one purchase.
+
+The same rows are posted as a snapshot on page load and every five minutes (`POST /snapshot`). Seven days after an advised change, `POST /outcomes/judge` compares the nearest snapshot before the change with the first one at least six days after, and asks Jev whether the community advice held (held, contradicted, inconclusive) with a confidence. `GET /outcomes` lists recent events and the running tally. Storage is a local SQLite file, `data/advisor.db`, git-ignored. Only metrics visible in the buyer's own account are stored.
+
 ## API
 
 `POST /advise`
@@ -78,7 +89,7 @@ Raw search results are cached in `data/raw/` so re-classifying does not hit the 
  "campaign": {"name": "Prospecting", "in_learning": true, "days_since_launch": 3}}
 ```
 
-Returns topic, topic confidence, risk level with confidence, interrupt probability, the playbook verdict with sources, and latency plus Jev usage.
+Returns topic, topic confidence, risk level with confidence, interrupt probability, the playbook verdict with sources, the parsed performance the panel saw, the stored event id, and latency plus Jev usage. Pass `entity` (account, level, id, name, date_range, metrics as label to text) to include page performance.
 
 `GET /playbook` the cached playbook without chunk bodies. `GET /health` mode and playbook status.
 
