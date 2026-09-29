@@ -10,7 +10,7 @@
   if (document.documentElement.dataset.fxAdvisor) return;
   document.documentElement.dataset.fxAdvisor = "1";
 
-  const VERSION = "0.3.5"; // shown in the panel header so a stale extension build is obvious
+  const VERSION = "0.3.6"; // shown in the panel header so a stale extension build is obvious
   const SERVER = "http://localhost:8877";
   const DEBOUNCE_MS = 150;
   let timer = null;
@@ -454,7 +454,16 @@
     try {
       const r = await fetch(`${SERVER}/advise`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ev) });
       const res = await r.json();
-      if (res.event_id) pendingEventIds.add(res.event_id);
+      if (res.event_id) {
+        // Row on/off toggles apply immediately in Ads Manager ("Ad updated"), with no Publish
+        // click, so mark them published now. Everything else waits for Publish or Discard.
+        if (/ on\/off: /.test(name)) {
+          fetch(`${SERVER}/events/status`, { method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ event_ids: [res.event_id], status: "published" }) }).catch(() => {});
+        } else {
+          pendingEventIds.add(res.event_id);
+        }
+      }
       render(res, ev);
     } catch (e) { renderError(e.message); }
   }
