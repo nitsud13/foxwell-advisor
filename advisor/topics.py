@@ -68,7 +68,7 @@ TOPICS: list[dict] = [
     {
         "id": "pause_in_learning",
         "label": "Pause during learning",
-        "desc": "pausing or turning off an ad set or campaign that is still in the learning phase",
+        "desc": "pausing or turning off an ad, ad set, or campaign that is still in the learning phase or has little data",
         "query": "pausing ad set during learning phase Meta should you wait",
         "queries": ["pausing ad set during learning phase Meta should you wait", "learning phase how long to wait before turning off ad set", "judging an ad set too early Meta learning phase"],
         "question": "You should wait until learning finishes before pausing",
@@ -76,7 +76,7 @@ TOPICS: list[dict] = [
     {
         "id": "pause_winner",
         "label": "Pause a performing campaign",
-        "desc": "pausing a campaign or ad set that is currently profitable",
+        "desc": "pausing an ad, ad set, or campaign that is currently profitable or performing",
         "query": "pausing a winning ad set to relaunch later Meta ads",
         "queries": ["pausing a winning ad set to relaunch later Meta ads", "turning off a winning ad set relaunch later Meta", "pausing and unpausing ad sets performance reset"],
         "question": "Pausing a winning ad set and relaunching later hurts performance",
@@ -184,6 +184,22 @@ TOPICS: list[dict] = [
         "query": "changing optimization event purchase vs add to cart Meta",
         "queries": ["changing optimization event purchase vs add to cart Meta", "optimizing for add to cart vs purchase Meta", "changing conversion event campaign Meta learning"],
         "question": "Optimizing for a softer event than purchase is a good idea",
+    },
+    {
+        "id": "pause_ad",
+        "label": "Turn off an ad",
+        "desc": "turning off a single ad or creative inside an ad set, pruning or killing an underperforming ad",
+        "query": "when to turn off an ad creative Meta kill underperforming ads",
+        "queries": ["when to turn off an ad creative Meta kill underperforming ads", "how long to let an ad run before turning it off Meta", "pruning ads in an ad set effect on delivery Meta"],
+        "question": "Turning off an underperforming ad quickly is the right move",
+    },
+    {
+        "id": "unpause_ad",
+        "label": "Turn an ad back on",
+        "desc": "turning a paused ad or creative back on, relaunching an old ad inside an existing ad set",
+        "query": "turning an old ad back on Meta does it keep social proof and learning",
+        "queries": ["turning an old ad back on Meta does it keep social proof and learning", "relaunch paused ad vs duplicate new ad Meta", "reactivating paused ads performance Meta"],
+        "question": "Turning a paused ad back on works as well as launching it fresh",
     },
     {
         "id": "other",
