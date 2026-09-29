@@ -10,7 +10,7 @@
   if (document.documentElement.dataset.fxAdvisor) return;
   document.documentElement.dataset.fxAdvisor = "1";
 
-  const VERSION = "0.3.2"; // shown in the panel header so a stale extension build is obvious
+  const VERSION = "0.3.3"; // shown in the panel header so a stale extension build is obvious
   const SERVER = "http://localhost:8877";
   const DEBOUNCE_MS = 150;
   let timer = null;
@@ -44,7 +44,7 @@
       if (skipButton(el) || isRowSelector(el)) continue;
       if (!visible(el)) continue; // hidden duplicates (virtualized grid, hover layers) must not compete with the visible control
       const name = gridSwitchName(el) || labelFor(el);
-      if (!name) continue;
+      if (!name || name === "__skip__") continue;
       // One control per label. Two elements sharing a label with different values would
       // otherwise read as a change on every rescan.
       if (seen.has(name)) continue;
@@ -61,7 +61,9 @@
     if (!isSwitch || !el.closest("._4lg0")) return "";
     const row = rowOfElement(el);
     const level = LEVEL_NAME[pageInfo().level] || "Campaign";
-    return row ? `${level} on/off: ${row.name}` : `${level} on/off`;
+    // No row match means we cannot say which ad this switch belongs to. A shared generic
+    // label would make every switch on the page fight over one value, so do not track it.
+    return row ? `${level} on/off: ${row.name}` : "__skip__";
   }
 
   const clean = (t) => (t || "").replace(/[\u200b-\u200d\ufeff]/g, "").replace(/\s+/g, " ").trim().slice(0, 80);
