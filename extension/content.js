@@ -10,7 +10,7 @@
   if (document.documentElement.dataset.fxAdvisor) return;
   document.documentElement.dataset.fxAdvisor = "1";
 
-  const VERSION = "0.3.1"; // shown in the panel header so a stale extension build is obvious
+  const VERSION = "0.3.2"; // shown in the panel header so a stale extension build is obvious
   const SERVER = "http://localhost:8877";
   const DEBOUNCE_MS = 150;
   let timer = null;
@@ -32,12 +32,36 @@
 
   // Row selection checkboxes in the campaigns table are not settings. Their label is the
   // row text, so a campaign called "CBO ..." was read as a campaign budget toggle.
-  const isRowSelector = (el) => (el.type === "checkbox" || el.getAttribute("role") === "checkbox")
-    && !!el.closest('[role="row"], [role="gridcell"], [role="rowheader"], td, th');
+  const isRowSelector = (el) => (el.type === "checkbox" || el.getAttribute("role") === "checkbox") && el.getAttribute("role") !== "switch"
+    && (!!el.closest('[role="row"], [role="gridcell"], [role="rowheader"], td, th, ._4lg0') || /select all/i.test(el.getAttribute("aria-label") || ""));
+
+  const visible = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
 
   function fields() {
     if (IS_MOCK) return [...document.querySelectorAll("[data-fx-field]")].map((el) => ({ el, name: el.dataset.fxField }));
-    return [...document.querySelectorAll(EDITABLE)].filter((el) => !skipButton(el) && !isRowSelector(el)).map((el) => ({ el, name: labelFor(el) })).filter((f) => f.name);
+    const out = [], seen = new Map();
+    for (const el of document.querySelectorAll(EDITABLE)) {
+      if (skipButton(el) || isRowSelector(el)) continue;
+      if (!visible(el)) continue; // hidden duplicates (virtualized grid, hover layers) must not compete with the visible control
+      const name = gridSwitchName(el) || labelFor(el);
+      if (!name) continue;
+      // One control per label. Two elements sharing a label with different values would
+      // otherwise read as a change on every rescan.
+      if (seen.has(name)) continue;
+      seen.set(name, el);
+      out.push({ el, name });
+    }
+    return out;
+  }
+
+  // The on/off switch inside a table row: its nearby text is the row's hover action bar
+  // ("Edit Duplicate ..."), so name it by level and row instead.
+  function gridSwitchName(el) {
+    const isSwitch = el.getAttribute("role") === "switch" || (el.type === "checkbox" && el.getAttribute("role") !== "checkbox");
+    if (!isSwitch || !el.closest("._4lg0")) return "";
+    const row = rowOfElement(el);
+    const level = LEVEL_NAME[pageInfo().level] || "Campaign";
+    return row ? `${level} on/off: ${row.name}` : `${level} on/off`;
   }
 
   const clean = (t) => (t || "").replace(/[\u200b-\u200d\ufeff]/g, "").replace(/\s+/g, " ").trim().slice(0, 80);
@@ -138,28 +162,61 @@
     return { account: q.get("act") || "", level, selected: sel.split(",").filter(Boolean), date_range: q.get("date") || "" };
   }
 
-  function readTableRows() {
+  function tableGeometry() {
     const headers = [...document.querySelectorAll('[role="columnheader"]')].map((h) => {
       const r = h.getBoundingClientRect(); return { name: clean(h.innerText), x1: r.left, x2: r.right };
     }).filter((h) => h.name);
-    if (headers.length < 3) return [];
     const nameCol = headers.find((h) => /^(campaign|ad set|ad)$/i.test(h.name));
-    if (!nameCol) return [];
+    if (headers.length < 3 || !nameCol) return null;
     const cells = [...document.querySelectorAll("._4lg0")].map((c) => {
       const r = c.getBoundingClientRect();
       return { text: clean(c.innerText), y: (r.top + r.bottom) / 2, x1: r.left, x2: r.right, h: r.height };
     }).filter((c) => c.h > 0 && c.text);
+    return { headers, nameCol, cells };
+  }
+
+  function rowFromCells(g, y) {
+    const metrics = {};
+    let name = "";
+    for (const c of g.cells.filter((c) => Math.abs(c.y - y) < 6)) {
+      const h = g.headers.find((h) => c.x1 < h.x2 - 2 && c.x2 > h.x1 + 2);
+      if (!h) continue;
+      if (h === g.nameCol) name = c.text.split("\n")[0];
+      else if (!/off \/ on/i.test(h.name)) metrics[h.name] = c.text;
+    }
+    if (!name || name === g.nameCol.name || /^results from \d+/i.test(name)) return null; // header and totals rows are cells too
+    return { name, metrics };
+  }
+
+  function readTableRows() {
+    const g = tableGeometry();
+    if (!g) return [];
     const rows = [];
-    for (const anchorCell of cells.filter((c) => c.x1 < nameCol.x2 - 2 && c.x2 > nameCol.x1 + 2)) {
-      const metrics = {};
-      for (const c of cells.filter((c) => Math.abs(c.y - anchorCell.y) < 6)) {
-        const h = headers.find((h) => c.x1 < h.x2 - 2 && c.x2 > h.x1 + 2);
-        if (h && h !== nameCol && !/off \/ on/i.test(h.name)) metrics[h.name] = c.text;
-      }
-      const name = anchorCell.text.split("\n")[0];
-      if (name && Object.keys(metrics).length) rows.push({ name, metrics });
+    for (const a of g.cells.filter((c) => c.x1 < g.nameCol.x2 - 2 && c.x2 > g.nameCol.x1 + 2)) {
+      const row = rowFromCells(g, a.y);
+      if (row && Object.keys(row.metrics).length) rows.push(row);
     }
     return rows;
+  }
+
+  // Row that contains a control (the on/off switch, a row checkbox), by vertical position.
+  function rowOfElement(el) {
+    const g = tableGeometry();
+    if (!g || !el) return null;
+    const r = el.getBoundingClientRect();
+    return rowFromCells(g, (r.top + r.bottom) / 2);
+  }
+
+  // Row currently selected by its checkbox (the inline budget popover edits the selected row).
+  function selectedRow() {
+    const g = tableGeometry();
+    if (!g) return null;
+    // Row boxes only: not the on/off switches (role=switch) and not the select-all box.
+    const boxes = [...document.querySelectorAll('input[type="checkbox"]')].filter((b) => b.checked && b.getAttribute("role") !== "switch"
+      && !/select all/i.test(b.getAttribute("aria-label") || "") && !b.closest('[role="columnheader"]') && b.closest("._4lg0, [role=\"row\"]"));
+    if (boxes.length !== 1) return null;
+    const r = boxes[0].getBoundingClientRect();
+    return rowFromCells(g, (r.top + r.bottom) / 2);
   }
 
   // Editor summary card (top right of the campaign/ad set editor): "Amount spent $248.60" etc.
@@ -189,21 +246,22 @@
     return clean((crumb && crumb.innerText) || (h && h.innerText) || "").slice(0, 120);
   }
 
-  function entityContext() {
+  const LEVEL_NAME = { campaigns: "Campaign", adsets: "Ad set", ads: "Ad" };
+  function entityContext(el) {
     if (IS_MOCK) {
       const m = {};
-      document.querySelectorAll("[data-fx-metric]").forEach((el) => { m[el.dataset.fxMetric] = clean(el.textContent); });
+      document.querySelectorAll("[data-fx-metric]").forEach((x) => { m[x.dataset.fxMetric] = clean(x.textContent); });
       return { account: "mock", level: "campaigns", id: "mock-1", name: campaignContext().name || "", date_range: "last 7 days", metrics: m };
     }
     const info = pageInfo();
     const inEditor = /\/edit\//.test(location.pathname);
-    let metrics = inEditor ? readEditorCard() : {};
-    let name = inEditor ? editorEntityName() : "";
+    let metrics = {}, name = "";
+    if (inEditor) { metrics = readEditorCard(); name = editorEntityName(); }
     if (!Object.keys(metrics).length) {
-      // Table view (inline popover edits): use the selected row, or the single visible row.
+      // Table view: the row the control sits in (on/off switch), else the checked row
+      // (inline budget popover edits the selected row), else the only row on screen.
       const rows = readTableRows();
-      const row = rows.find((r) => info.selected.length === 1 && r.name === name) || (rows.length === 1 ? rows[0] : null)
-        || rows.find((r) => r.metrics && /^(learning|active)/i.test(r.metrics["Delivery"] || "") && rows.length === 1) || null;
+      const row = (el && rowOfElement(el)) || selectedRow() || (rows.length === 1 ? rows[0] : null);
       if (row) { metrics = row.metrics; name = name || row.name; }
     }
     return { account: info.account, level: info.level, id: info.selected.length === 1 ? info.selected[0] : "", name, date_range: info.date_range, metrics };
@@ -385,7 +443,7 @@
 
   // --- wiring --------------------------------------------------------------
   async function advise(name, el, oldVal, newVal) {
-    const ev = { field: name, old: oldVal, new: newVal, campaign: campaignContext(), entity: entityContext() };
+    const ev = { field: name, old: oldVal, new: newVal, campaign: campaignContext(), entity: entityContext(el) };
     try {
       const r = await fetch(`${SERVER}/advise`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ev) });
       const res = await r.json();
@@ -412,8 +470,25 @@
     return (el.tagName === "INPUT" && !["checkbox", "radio"].includes(el.type)) || el.tagName === "TEXTAREA";
   }
 
+  const lastChange = new Map(); // name -> { from, to, at }
+  const adviseTimes = [];       // timestamps of recent advise calls (rate cap)
+  const RATE_CAP = 12, RATE_WINDOW_MS = 60000, FLAP_WINDOW_MS = 4000;
+
   function noteChange(name, el, oldVal, newVal) {
+    const prev = lastChange.get(name);
     known.set(name, newVal);
+    // A value that flips straight back to what it was a moment ago is the page re-rendering,
+    // not the buyer. Record it, say nothing.
+    if (prev && prev.from === newVal && prev.to === oldVal && Date.now() - prev.at < FLAP_WINDOW_MS) {
+      lastChange.set(name, { from: oldVal, to: newVal, at: Date.now() });
+      log("flap ignored", name, oldVal, "->", newVal);
+      return;
+    }
+    lastChange.set(name, { from: oldVal, to: newVal, at: Date.now() });
+    const now = Date.now();
+    while (adviseTimes.length && now - adviseTimes[0] > RATE_WINDOW_MS) adviseTimes.shift();
+    if (adviseTimes.length >= RATE_CAP) { log("rate cap, skipped", name); return; }
+    adviseTimes.push(now);
     reported.set(name, newVal);
     log("change", name, oldVal, "->", newVal);
     clearTimeout(timer);
